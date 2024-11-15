@@ -1,0 +1,192 @@
+---
+title: "Project 2"
+author: "Lucas Rodriguez"
+date: "2024-11-13"
+output: html_document
+---
+
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.height=5, fig.width=6, warning=FALSE, tidy=TRUE, tidy.opts=list(width.cutoff=60))
+```
+
+```{r, echo=FALSE}
+#packages
+library(tidyverse)
+library(kableExtra)
+library(scales)
+```
+
+## 1. Introduction
+
+```{r}
+InitialData <- read.csv("Project2CleanedDataset.csv")
+#forgot to remove this variable during the inital cleaning process
+InitialData <- select(InitialData, -skipped)
+#also needed to change the timestamp to US Central time (In UTC by default)
+InitialData <- mutate(InitialData, ts = with_tz(ymd_hms(ts), "America/Chicago"))
+```
+
+![](SpotifyLogo.png){width=15%}
+
+The dataset above is the extended history of my spotify account. This data can be requested by a spotify subscriber with the [following link](https://www.spotify.com/us/account/privacy/). I chose the following dataset because I planned on manipulating this dataset as a passion project as I was always fascinated by spotify wrapped and wanted to create an all-time one, not one limited to a year's time frame that is only viewable for a month.
+
+## 2. Data Preperation
+
+I recieved an email with a zip file approximately 3 weeks after I requested the extended streaming history from spotify. The zip file contained around 15 .JSON files, that contained every song or podcast I had ever streamed on spotify, up until the date that the files were delivered to me. I attatched the file in the repo, but I used the 'rjson' and the 'jsonlite' packages to transform the JSON files into dataframes, then merged the dataframes and removed excess columns to create the dataset seen above. Manipulating .JSON files was an unique experience for me, something that took extensive research to find out how to best manipulate them to create a dataset for this project
+
+## 3. Variable description
+
+```{r}
+CleanedData <- as.tibble(InitialData)
+CleanedData <- rename(CleanedData, Number = X)
+CleanedData <- rename(CleanedData, Timestamp = ts)
+CleanedData <- rename(CleanedData, TrackName = master_metadata_track_name)
+CleanedData <- rename(CleanedData, ArtistName = master_metadata_album_artist_name)
+CleanedData <- rename(CleanedData, AlbumName = master_metadata_album_album_name)
+CleanedData <- rename(CleanedData, TrackID = spotify_track_uri)
+VariableNames = c('Timestamp', 'ms_played', 'reason_start', 'reason_end', 'shuffle', 'offline')
+VariableType = c('Quantitative', 'Quantitative', 'Qualitative', 'Qualitative', 'Qualitative', 'Qualitative')
+VariableDesc = c('The date and time when played', 'The length of the play session (ms)', 'How the song started playing', 'How the song stopped playing', 'If the song appeared on a shuffle', 'If the song was played offline or online' )
+TableData <- data.frame(rbind(VariableType, VariableDesc))
+colnames(TableData) <- VariableNames
+kable_classic(kbl(TableData))
+```
+
+## 4. Univariate Analysis
+
+#### Variable 1: ms_played
+
+```{r}
+# Removed all non songs from the distribution
+CleanedData1 <- filter(CleanedData, is.na(TrackName)==FALSE)
+
+CleanedData1 <- filter(CleanedData1, ms_played <= 650000)
+#set the limits for the longest full song I have played (All Too Well 10 Minute Version), any datapoints with a longer playtime were errors in data
+
+CleanedData1 <- mutate(CleanedData1, SecondsPlayed = ms_played / 1000)
+
+hist(CleanedData1$SecondsPlayed, col = 'coral1', main = 'Distribution of Seconds Played', xlab = 'Time Played (Seconds)')
+```
+
+The above histogram is the distribution for the seconds played variable, a mutation for the initial ms_played variable. The graph is right-skewed, as is to be expected as most songs are concentrated around the 2 1/2 to 4 minute (150-250 seconds) range. The data of the graph is altered to represent a better distribution of the played songs, songs with a playtime registered above 650 seconds (error in the tracking of spotify as it is longer than the longest song) (for reference this was only around 10 of the roughly 242000 data points), and datapoints that weren't songs (podcasts). The remaining data represents an accurate distribution of the length of datapoints. The graph has a mean of `r round(mean(CleanedData1$SecondsPlayed),2)` and a median of `r round(median(CleanedData1$SecondsPlayed),2)`. This repersents a graph skewed to the left, likely due to the high concentration of skipped songs resulting in very low Seconds Played Values. 
+
+#### Variable 2: reason_start
+
+```{r}
+V2Table <- prop.table(table(CleanedData1$reason_start))
+# removing datapoints with less than 1% of the proportion
+V2Table <- V2Table[(V2Table / sum(V2Table)) >= 0.01]
+barplot(V2Table, col = 'lightblue3', ylab = 'Proportion', xlab = 'Reason Start', main = 'Reason Start Distribution')
+```
+
+The above graph showcases the distribution between reasons a track starts playing. With `r percent(round(V2Table['trackdone'] / sum(V2Table),4))`, trackdone has slightly over half of the reason start variables, with fwdbtn having `r percent(round(V2Table['fwdbtn'] / sum(V2Table),4))` percent of the outcomes. The 3 other notable outcomes, 'backbtn', 'clickrow', and 'playbtn', all had less than 10% of the outcomes. All other outcomes had less than 1%, and were removed from the bar plot in the coding phase to improve visibility
+
+#### Variable 3: reason_end
+
+```{r}
+V3Table <- prop.table(table(CleanedData1$reason_end))
+# removing datapoints with less than 1% of the proportion
+V3Table <- V3Table[(V3Table / sum(V3Table)) >= 0.01]
+barplot(V3Table, col = 'mediumpurple4', xlab = 'Reason End', ylab = 'Proportion', main = 'Reason End Distribution')
+```
+
+As expected, the Reason End distribution has a very similar theme, with the trackdone (`r percent(round(V3Table['trackdone'] / sum(V3Table),4))`) and fwdbtn (`r percent(round(V3Table['fwdbtn'] / sum(V3Table),4))`) having nearly identical percentages as the Reason Start graph, as when a track starts when a previous track finished (trackdone), they would both be counted with 'trackdone' in reason start and reason end respectively. the same logic applies to fwdbtn. Endplay does have over 10% of the outcomes, unlike any of the tertiary outcomes in reason start. 
+
+
+#### Variable 4: Shuffle
+
+```{r}
+V4Table <- prop.table(table(CleanedData1$shuffle))
+barplot(V4Table, col = 'yellow2', ylab = 'Proportion', main = 'Shuffle Distribution')
+```
+
+The graph above showcases that `r percent(round(V4Table['TRUE'] / sum(V4Table),4))` of the tracks appeared due to shuffle being enabled, as opposed to `r percent(round(V4Table['FALSE'] / sum(V4Table),4))` appearing without shuffle
+
+#### Variable 5: Offline
+
+```{r}
+V5Table <- prop.table(table(CleanedData1$offline))
+barplot(V5Table, ylab = 'Proportion', main = 'Distribution of songs played online (False) to offline (True)', col = 'darkorange4')
+
+```
+
+A remarkable `r percent(round(V5Table['FALSE'] / sum(V5Table),4))` of tracks were recorded with internet or cellular connection, which is explanatory as the only instances where I would have play tracks offline would be when I was in the middle of nowhere or on an airplane, which would be a very small percentage (`r percent(round(V5Table['TRUE'] / sum(V5Table),4))` exactly) of tracks played. 
+
+#### Variable 6: Date
+
+###### Year
+```{r}
+CleanedData3Y <- mutate(CleanedData1, Year = year(CleanedData1$Timestamp))
+V6Table1 <- prop.table(table(CleanedData3Y$Year))
+barplot(V6Table1, col = 'seagreen3', xlab = 'Year', ylab = 'Frequency', main = 'Distribution of Timestamp by Year')
+```
+
+The above distribution showcases that 2022 was the year with the most tracks played, with `r percent(round(V6Table1[2022] / sum(V6Table1),4))` of the total number of tracks, with 2023 closely following with `r percent(round(V6Table1[2023] / sum(V6Table1),4))`. 2024 (`r percent(round(V6Table1[2024] / sum(V6Table1),4))`) is missing 2 - 3 months of data, which would explain a stark decline in the data that likely wouldn't be as stark had this data been requested in 2025. 
+
+###### Month
+```{r}
+#distributed by month
+CleanedData3M <- mutate(CleanedData1, Month = month(CleanedData1$Timestamp, label = TRUE, abbr = TRUE))
+V6Table2 <- prop.table(table(CleanedData3M$Month))
+bpV6.2 <- barplot(V6Table2, col = 'darkgreen', xlab = 'Month', ylab = 'Frequency', main = 'Distribution of Timestamp by Month', names.arg = names(V6Table2))
+```
+
+The monthly distribution showcases that March (`r percent(round(V6Table2["Mar"] / sum(V6Table2),4))`), September (`r percent(round(V6Table2["Sep"] / sum(V6Table2),4))`), and October(`r percent(round(V6Table2["Oct"] / sum(V6Table2),4))`) have the largest percentages, with the summer months (June (`r percent(round(V6Table2["Jun"] / sum(V6Table2),4))`), July (`r percent(round(V6Table2["Jul"] / sum(V6Table2),4))`), August (`r percent(round(V6Table2["Aug"] / sum(V6Table2),4))`)) and the holiday season (November (`r percent(round(V6Table2["Nov"] / sum(V6Table2),4))`), December (`r percent(round(V6Table2["Dec"] / sum(V6Table2),4))`), January (`r percent(round(V6Table2["Jan"] / sum(V6Table2),4))`) having consistently lower streaming numbers than other months.
+
+## 5. Bivariate Analysis
+
+#### Graph 1: Seconds Played vs Year
+```{r}
+BV1 <- tapply(CleanedData3Y$SecondsPlayed, CleanedData3Y$Year, mean)
+barplot(BV1, col = 'pink2', main = 'Mean Seconds Played by Year', xlab = 'Year', ylab = 'Mean Seconds Played')
+```
+
+The above graph showcases the average length of a play session in seconds by year. Interestingly, 2019 leads with a mean seconds played of `r round(BV1["2019"],2)`, followed by 2021 with a mean of `r round(BV1["2021"],2)` seconds played, and 2020 with a mean of `r round(BV1["2020"],2)` seconds played. Interestingly, these are the 3 years with the lowest sum of play sessions (See graph in [Variable 6, Year](#year)). 
+
+#### Graph 2: Year vs Reason Start
+```{r}
+#only including the 5 outcomes in the reason start graph
+BV2Data <- filter(CleanedData3Y, reason_start == c('trackdone', 'fwdbtn', 'backbtn', 'playbtn', 'clickrow'))
+
+BV2Table <- prop.table(table(BV2Data$reason_start, BV2Data$Year), margin = 2)
+BV2Table <- BV2Table * 100
+
+barplot(BV2Table, col = c('plum', 'violet', 'pink', 'pink3', 'mediumpurple1'), main = 'Distribution of Reason Start by Year', xlab = 'Year', ylab = 'Percentage')
+
+legend('topleft', legend = rownames(BV2Table), cex = 1, fill = c('plum', 'violet', 'pink', 'pink3', 'mediumpurple1'), xpd = TRUE, inset = c(0.075,0.05))
+```
+
+Continuing the description from Graph 1, the years with the higher mean seconds played (2019, 2020, 2021), which correspond with overall less data points, have a larger percentage of songs that start because the previous song naturally ended ("trackdone"), compared to the more recent 3 years (2022, '23, '24), which have more data points and a larger percentage of 'fwdbtn' outputs as reason starts. For reference, the first three years had a mean percentage of 'trackdone' of `r round(mean(BV2Table["trackdone", c("2019", "2020", "2021")]),2)`%, while the last three years have a mean percentage of 'trackdone' outputs at `r round(mean(BV2Table["trackdone", c("2022", "2023", "2024")]),2)`%. Likewise, the first 3 years have a mean 'fwdbtn' output percentage at `r round(mean(BV2Table["fwdbtn", c("2019", "2020", "2021")]),2)`%, while the last 3 years have the same percentage at `r round(mean(BV2Table["trackdone", c("2022", "2023", "2024")]),2)`%. The simplest explanation for the following is that I have gotten more impatient and skipped more songs in recent years, another explanation is that 2022 was the year in which spotify added the Smart Shuffle feature, which I began using quite heavily upon its release. This feature adds an AI generated song as every 3rd song, and the roughly 35% increase in 'fwdbtn' is similar to the 33% of songs being AI generated.
+
+
+#### Graph 3: Month vs Seconds Played
+```{r}
+BV3 <- tapply(CleanedData3M$SecondsPlayed, CleanedData3M$Month, mean)
+barplot(BV3, col = 'pink2', main = 'Mean Seconds Played by Month', xlab = 'Month', ylab = 'Mean Seconds Played')
+```
+
+This graph shares similar patterns with Graph 1, where the months that showed lower streaming numbers as seen in the [Variable 6: Month](#month) graph experienced higher mean seconds played. The holiday months (November, December, January) and summer months (June, July, August) defined in the inital Months graph have a mean of `r round(mean(BV3[c("Nov", "Dec", "Jan")]),2)` and `r round(mean(BV3[c("Jun", "Jul", "Aug")]),2)` respectively, while the other 6 months have a mean of `r round(mean(BV3[c("Feb", "Mar", "Apr", "May", "Sep", "Oct")]),2)`, noticeably lower. 
+
+#### Graph 4: Months vs Reason Start
+```{r}
+#only including the 5 outcomes in the reason start graph
+BV4Data <- filter(CleanedData3M, reason_start == c('trackdone', 'fwdbtn', 'backbtn', 'playbtn', 'clickrow'))
+
+BV4Table <- prop.table(table(BV4Data$reason_start, BV4Data$Month), margin = 2)
+BV4Table <- BV4Table * 100
+
+barplot(BV4Table, col = c('plum', 'violet', 'pink', 'pink3', 'mediumpurple1'), main = 'Distribution of Reason Start by Month', xlab = 'Month', ylab = 'Percentage')
+
+legend('topleft', legend = rownames(BV4Table), cex = 1, fill = c('plum', 'violet', 'pink', 'pink3', 'mediumpurple1'), xpd = TRUE, inset = c(0.075,0.025))
+```
+
+Once again, similarly to the years graph, the months with longer mean seconds played have consistently higher percentages of 'trackdone' outcomes than those months with shorter mean seconds. The summer months have a mean trackdone outcome percentage of `r round(mean(BV4Table["trackdone", c("Jun", "Jul", "Aug")]),2)`%, with the holiday months having a mean trackdone outcome percentage of `r round(mean(BV4Table["trackdone", c("Nov", "Dec", "Jan")]),2)`%. The other 6 months have a mean of `r round(mean(BV4Table["trackdone", c("Feb", "Mar", "Apr", "May", "Sep", "Oct")]),2)`%. This distribution I have a less concrete hypothesis for compared to the Year distribution. My best guess is that I have more time off of school during the months with higher natural finishing of songs, which means I am more relaxed and have more patience to not skip songs, while months where I am in school I am more anxious and have higher tendencies to skip songs (represented by the 'fwdbtn'). This is the best hypothesis I have, otherwise the discrepancy between the months isn't something I have a logical explanation for. 
+
+## Conclusion
+
+Overall, I learned a lot about my listening habits throughout this project. The exploration of variables focused on the timestamp, seconds played and reason start variables mainly, with brief univariate analyses of other variables in the dataset. The overall takeaways are that time based variables with a lower quantity of datapoints experienced higher mean seconds played and higher percentages of 'trackdone' outputs for the reason start variable. The reason start and reason ends variable had very similar distributions as seen in the univariate analysis, so I stuck to reason start for the bivariate comparisons. Likewise, the months with a larger quantity of datapoints had a lower mean seconds played and a larger proportion of the 'fwdbtn' reason start which correlates with skipped songs. Additionally, the correlation between larger mean seconds played and larger proportions of 'trackdone' reason start were also found. Viceversa is also true, which makes sense as the more songs that are skipped, the more songs that register close to 0 seconds played, which brings down the average. 
+
+#### References
+
+Image: https://newsroom.spotify.com/media-kit/logo-and-brand-assets/
+GitHub Repository: https://github.com/ldchump/Project2.git 
